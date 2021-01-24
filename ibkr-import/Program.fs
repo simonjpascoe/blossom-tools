@@ -261,7 +261,18 @@ let ppBlossom fnOut (statement : Statement) =
                                                                                    |> List.distinct
                                                                        writePrice conid hs)
 
-  File.WriteAllLines(fnOut, securities @ orders @ prices)
+  // write fx rates
+  let writeFx accy dccy (hs : (DateTime * decimal) list) =
+    let l0 = $"prices {accy} {dccy}"
+    let ls = hs |> List.map (fun (d, p) -> $"""  {d.ToString("yyyy-MM-dd")} {p}""")
+    l0 :: ls @ [""]
+
+  let fxrates = statement.fxrates |> List.groupBy (fun x -> x.accy, x.dccy)
+                                  |> List.collect (fun ((accy, dccy), fxs) -> let xs = fxs |> List.map (fun p -> p.reportDate, p.rate)
+                                                                                           |> List.distinct
+                                                                              writeFx accy dccy xs)
+
+  File.WriteAllLines(fnOut, securities @ orders @ prices @ fxrates)
 
 // CLI
 
