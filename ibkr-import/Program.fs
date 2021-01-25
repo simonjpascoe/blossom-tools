@@ -48,6 +48,10 @@ let merge (m1 : Map<'a, 'b>) (m2 : Map<'a, 'b>) = Map.fold (fun s k v -> Map.add
     originatingOrderID="" originatingTransactionID="" accruedInt="" />
 
   <ConversionRate reportDate="2021-01-07" fromCurrency="ILS" toCurrency="HKD" rate="2.4384" />
+
+  <InterestAccrualsCurrency accountId="Uxxxxxx" acctAlias="" model="" currency="JPY"
+  fromDate="2021-01-21" toDate="2021-01-21" startingAccrualBalance="-xxxx" interestAccrued="-xxxx"
+  accrualReversal="0" fxTranslation="0" endingAccrualBalance="-xxxx" />
 *)
 
 // Processing and output
@@ -93,12 +97,21 @@ type FXRate =
     rate: decimal
   }
 
+type InterestAccrual =
+  {
+    accrualDate: DateTime
+    currency: string
+    accrual: decimal
+    reversal: decimal
+  }
+
 type Statement =
   {
     orders: Order list
     securities: Map<string, Security>
     positions: OpenPosition list
     fxrates: FXRate list
+    interest: InterestAccrual list
   }
     with
       static member Empty =
@@ -107,6 +120,7 @@ type Statement =
           securities = Map.empty
           positions = []
           fxrates = []
+          interest = []
         }
 
 let mergeStatements s1 s2 =
@@ -115,9 +129,10 @@ let mergeStatements s1 s2 =
     securities = merge s1.securities s2.securities
     positions = s1.positions @ s2.positions
     fxrates = s1.fxrates @ s2.fxrates
+    interest = s1.interest @ s2.interest
   }
 
-let createOrder (node : XElement) =
+let createOrder (node: XElement) =
   let a nm = xn nm |> node.Attribute |> fun a -> a.Value
   {
     conid = a "conid"
@@ -165,6 +180,20 @@ let createFX (node: XElement) =
     rate = a "rate" |> decimal
   }
 
+let createInterest (node: XElement) =
+    let a nm =
+        xn nm |> node.Attribute |> fun a -> a.Value
+
+    let ix =
+      { accrualDate = a "toDate" |> cdate
+        currency = a "currency"
+        accrual = a "interestAccrued" |> decimal
+        reversal = a "accrualReversal" |> decimal }
+
+    if ix.currency = "BASE_SUMMARY"
+      then None
+      else Some ix
+
 let parseSymbology (snIn : string) =
   let xml = XDocument.Load (snIn, LoadOptions.SetLineInfo)
   xml
@@ -192,12 +221,14 @@ let parseFlexStatement (fnIn : string) =
   let securities = merge securities1 securities2
   let openPositions = xml.Descendants(xn "OpenPosition") |> Seq.map createOpenPosition |> Seq.toList |> List.distinct
   let fxrates = xml.Descendants(xn "ConversionRate") |> Seq.map createFX |> Seq.toList
+  let interest = xml.Descendants(xn "InterestAccrualsCurrency") |> Seq.choose createInterest |> Seq.toList
 
   {
     orders = orders
     securities = securities
     positions = openPositions
     fxrates = fxrates
+    interest = interest
   }
 
 let ppBlossom fnOut (statement : Statement) =
@@ -249,6 +280,25 @@ let ppBlossom fnOut (statement : Statement) =
 
   let orders = statement.orders |> List.collect writeOrder
 
+  // interest accruals
+  let writeInterest (interest: InterestAccrual) =
+    let p1 =
+      if interest.accrual <> 0M
+        then  let l1 = $"""{interest.accrualDate.ToString("yyyy-MM-dd")} Interactive Brokers | Credit / debit interest accrual"""
+              let l2 = $"""  Payable:Interactive Brokers:Interest    {interest.accrual} {interest.currency}"""
+              let l3 = $"""  Income:Interest"""
+              [l1; l2; l3; ""]
+        else []
+    let p2 =
+      if interest.reversal <> 0M
+        then  let l1 = $"""{interest.accrualDate.ToString("yyyy-MM-dd")} Interactive Brokers | Credit / debit interest posting"""
+              let l2 = $"""  Payable:Interactive Brokers:Interest    {interest.reversal} {interest.currency}"""
+              let l3 = $"""  Asset:Interactive Brokers:Cash"""
+              [l1; l2; l3; ""]
+        else []
+    p1 @ p2
+  let interest = statement.interest |> List.collect writeInterest
+
   // prices
   let writePrice conid (hs : (DateTime * decimal) list) =
     let security = statement.securities |> Map.find conid
@@ -272,7 +322,7 @@ let ppBlossom fnOut (statement : Statement) =
                                                                                            |> List.distinct
                                                                               writeFx accy dccy xs)
 
-  File.WriteAllLines(fnOut, securities @ orders @ prices @ fxrates)
+  File.WriteAllLines(fnOut, securities @ orders @ interest @ prices @ fxrates)
 
 // CLI
 
