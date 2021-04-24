@@ -9,7 +9,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build_ibkr_import",
-      "program": "${workspaceFolder}/ibkr-import/bin/Debug/netcoreapp3.1/ibkr-import.dll",
+      "program": "${workspaceFolder}/ibkr-import/bin/Debug/netcoreapp5.0/ibkr-import.dll",
       "args": ["--mode", "blossom",
                "--symbology", "g:\\personal-git-repos-local\\finance\\ibkr\\symbology.xml",
                "--output", "g:\\personal-git-repos-local\\finance\\ibkr\\omni.fledge",
@@ -19,6 +19,19 @@
                "--input", "g:\\personal-git-repos-local\\finance\\ibkr\\omni_2020.xml",
                "--input", "g:\\personal-git-repos-local\\finance\\ibkr\\omni_2021.xml",
                ],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "internalConsole"
+    },
+    {
+      "name": ".NET Core Launch (gnc-import)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build_gnc_import",
+      "program": "${workspaceFolder}/gnc-import/bin/Debug/netcoreapp5.0/gnc-import.dll",
+      "args": [
+               "--input", "g:\\personal-git-repos-local\\finance\\ibkr\\omni_2021.xml",
+              ],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
       "console": "internalConsole"
