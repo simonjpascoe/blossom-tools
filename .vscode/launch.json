@@ -30,7 +30,7 @@
       "preLaunchTask": "build_gnc_import",
       "program": "${workspaceFolder}/gnc-import/bin/Debug/netcoreapp5.0/gnc-import.dll",
       "args": [
-               "--input", "g:\\personal-git-repos-local\\finance\\ibkr\\omni_2021.xml",
+               "--input", "C:\\Users\\simon\\Google Drive\\20210424_185831_gnucash_export_Money.gnca",
               ],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
