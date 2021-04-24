@@ -64,6 +64,7 @@ type Order =
     commissionCurrency: string
     taxes: decimal
     reportDate: DateTime
+    opening: bool
   }
 
 type Security =
@@ -142,6 +143,7 @@ let createOrder (node: XElement) =
     commissionCurrency = a "ibCommissionCurrency"
     taxes = a "taxes" |> decimal |> negate
     reportDate = a "reportDate" |> cdate
+    opening = a "openCloseIndicator" |> fun x -> x = "O"
   }
 
 let createSecurity (node: XElement) =
@@ -246,11 +248,10 @@ let ppBlossom fnOut (statement : Statement) =
 
     let l1 = $"commodity {security.symbol}"
     let l2 = $"  name {security.description}"
-    let l3 = $"  measure {security.currency}"
     let l4 = $"  class {klass}"
     let l5 = $"  externalid ibkr.conid {security.conid}"
 
-    let p1 = [l1; l2; l3; l4; l5]
+    let p1 = [l1; l2; l4; l5]
     let p2 = match (multiplier, mtm) with
                | None, false -> p1
                | Some a, false -> p1 @ [$"  multiplier {a}"]
@@ -262,21 +263,24 @@ let ppBlossom fnOut (statement : Statement) =
   // transactions
   let writeOrder (order : Order) =
     let security = statement.securities |> Map.find order.conid
-    let bs = if order.quantity > 0M then "Buy" else "Sell"
-    let l1 = $"""{order.reportDate.ToString("yyyy-MM-dd")} {bs} {security.description}"""
-    let l2 = $"""  Asset:Interactive Brokers:Trading:{security.category}    {order.quantity} {security.symbol} @ {order.price} {security.currency}"""
-    let l3 = $"""  Asset:Interactive Brokers:Cash"""
-    let p1 = [l1; l2; l3]
+    let physicalAccount = $"""Asset:InteractiveBrokers:Trading:{security.category}"""
+    let l1 = $"""{order.reportDate.ToString("yyyy-MM-dd")} trade {physicalAccount} {order.quantity} {security.symbol} @ {order.price} {security.currency}"""
+    let l2 = $"""  settlement      Asset:InteractiveBrokers:Cash"""
+    let p1 = [l1; l2]
 
     let p2 = match order.commission with
                | x when x = 0M -> p1
-               | x -> p1 @ [$"  Expense:Interactive Brokers:Commission  {order.commission} {order.commissionCurrency}"]
+               | x -> p1 @ [$"  expense         Expense:InteractiveBrokers:Commission  {order.commission} {order.commissionCurrency}"]
 
     let p3 = match order.taxes with
                | x when x = 0M -> p2
-               | x -> p2 @ [$"  Expense:Interactive Brokers:Taxes  {order.taxes} {security.currency}"]
+               | x -> p2 @ [$"  expense         Expense:InteractiveBrokers:Taxes  {order.taxes} {security.currency}"]
 
-    p3 @ [""]
+    let p4 = match order.opening with
+               | false -> p3 @ ["  cg              Income:CapitalGains"]
+               | true  -> p3
+
+    p4 @ [""]
 
   let orders = statement.orders |> List.collect writeOrder
 
@@ -285,15 +289,15 @@ let ppBlossom fnOut (statement : Statement) =
     let p1 =
       if interest.accrual <> 0M
         then  let l1 = $"""{interest.accrualDate.ToString("yyyy-MM-dd")} Interactive Brokers | Credit / debit interest accrual"""
-              let l2 = $"""  Payable:Interactive Brokers:Interest    {interest.accrual} {interest.currency}"""
+              let l2 = $"""  Payable:InteractiveBrokers:Interest    {interest.accrual} {interest.currency}"""
               let l3 = $"""  Income:Interest"""
               [l1; l2; l3; ""]
         else []
     let p2 =
       if interest.reversal <> 0M
         then  let l1 = $"""{interest.accrualDate.ToString("yyyy-MM-dd")} Interactive Brokers | Credit / debit interest posting"""
-              let l2 = $"""  Payable:Interactive Brokers:Interest    {interest.reversal} {interest.currency}"""
-              let l3 = $"""  Asset:Interactive Brokers:Cash"""
+              let l2 = $"""  Payable:InteractiveBrokers:Interest    {interest.reversal} {interest.currency}"""
+              let l3 = $"""  Asset:InteractiveBrokers:Cash"""
               [l1; l2; l3; ""]
         else []
     p1 @ p2
