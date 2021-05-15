@@ -233,7 +233,13 @@ let parseFlexStatement (fnIn : string) =
     interest = interest
   }
 
-let ppBlossom fnOut (statement : Statement) =
+let ppBlossom (fnOut: string) (statement : Statement) =
+  // create an extra import line for extras
+  let imports = [
+    $"import {Path.GetFileNameWithoutExtension(fnOut)}_extras.fledge"
+    ""
+  ]
+
   // commodities
   let writeSecurity (security: Security) =
     let klass, multiplier, mtm =
@@ -326,7 +332,7 @@ let ppBlossom fnOut (statement : Statement) =
                                                                                            |> List.distinct
                                                                               writeFx accy dccy xs)
 
-  File.WriteAllLines(fnOut, securities @ orders @ interest @ prices @ fxrates)
+  File.WriteAllLines(fnOut, imports @ securities @ orders @ interest @ prices @ fxrates)
 
 // CLI
 
