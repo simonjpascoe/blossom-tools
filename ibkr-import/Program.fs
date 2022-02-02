@@ -52,6 +52,13 @@ let merge (m1 : Map<'a, 'b>) (m2 : Map<'a, 'b>) = Map.fold (fun s k v -> Map.add
   <InterestAccrualsCurrency accountId="Uxxxxxx" acctAlias="" model="" currency="JPY"
   fromDate="2021-01-21" toDate="2021-01-21" startingAccrualBalance="-xxxx" interestAccrued="-xxxx"
   accrualReversal="0" fxTranslation="0" endingAccrualBalance="-xxxx" />
+
+  <ChangeInDividendAccrual accountId="Uxxxxxx" acctAlias="" model="" currency="HKD" fxRateToBase="1" assetCategory="STK" 
+  symbol="315" description="SMARTONE TELECOMMUNICATIONS" conid="4116485" securityID="BMG8219Z1059" securityIDType="ISIN" cusip="" 
+  isin="BMG8219Z1059" listingExchange="SEHK" underlyingConid="" underlyingSymbol="" underlyingSecurityID="" 
+  underlyingListingExchange="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" 
+  reportDate="2021-03-18" date="2021-03-18" exDate="2021-03-05" payDate="2021-03-18" quantity="15000" tax="0" fee="0" 
+  grossRate="0.145" grossAmount="-2175" netAmount="-2175" code="Re" fromAcct="" toAcct="" levelOfDetail="DETAIL" />
 *)
 
 // Processing and output
@@ -106,6 +113,21 @@ type InterestAccrual =
     reversal: decimal
   }
 
+type DividendAccrual = 
+  {
+    conid: string
+    symbol: string
+    currency: string
+    quantity: decimal
+    gross: decimal
+    net: decimal
+    tax: decimal
+    fee: decimal
+    isPosting: bool
+    exDate: DateTime
+    payDate: DateTime option
+  }
+
 type Statement =
   {
     orders: Order list
@@ -113,6 +135,7 @@ type Statement =
     positions: OpenPosition list
     fxrates: FXRate list
     interest: InterestAccrual list
+    dividends: DividendAccrual list
   }
     with
       static member Empty =
@@ -122,6 +145,7 @@ type Statement =
           positions = []
           fxrates = []
           interest = []
+          dividends = []
         }
 
 let mergeStatements s1 s2 =
@@ -131,10 +155,13 @@ let mergeStatements s1 s2 =
     positions = s1.positions @ s2.positions
     fxrates = s1.fxrates @ s2.fxrates
     interest = s1.interest @ s2.interest
+    dividends = s1.dividends @ s2.dividends
   }
 
+let bind_attribute_lookup (node: XElement) = fun nm -> xn nm |> node.Attribute |> fun a -> a.Value
+
 let createOrder (node: XElement) =
-  let a nm = xn nm |> node.Attribute |> fun a -> a.Value
+  let a = bind_attribute_lookup node
   {
     conid = a "conid"
     quantity = a "quantity" |> decimal
@@ -147,7 +174,7 @@ let createOrder (node: XElement) =
   }
 
 let createSecurity (node: XElement) =
-  let a nm = xn nm |> node.Attribute |> fun a -> a.Value
+  let a = bind_attribute_lookup node
   {
     conid = a "conid"
     symbol = a "symbol" |> fun s -> s.Replace(' ', '_')
@@ -165,7 +192,7 @@ let createSecurity (node: XElement) =
   }
 
 let createOpenPosition (node: XElement) =
-  let a nm = xn nm |> node.Attribute |> fun a -> a.Value
+  let a = bind_attribute_lookup node
   {
     conid = a "conid"
     reportDate = a "reportDate" |> cdate
@@ -174,7 +201,7 @@ let createOpenPosition (node: XElement) =
   }
 
 let createFX (node: XElement) =
-  let a nm = xn nm |> node.Attribute |> fun a -> a.Value
+  let a = bind_attribute_lookup node
   {
     reportDate = a "reportDate" |> cdate
     accy = a "fromCurrency"
@@ -183,18 +210,36 @@ let createFX (node: XElement) =
   }
 
 let createInterest (node: XElement) =
-    let a nm =
-        xn nm |> node.Attribute |> fun a -> a.Value
+  let a = bind_attribute_lookup node
 
-    let ix =
-      { accrualDate = a "toDate" |> cdate
-        currency = a "currency"
-        accrual = a "interestAccrued" |> decimal
-        reversal = a "accrualReversal" |> decimal }
+  let ix =
+    { accrualDate = a "toDate" |> cdate
+      currency = a "currency"
+      accrual = a "interestAccrued" |> decimal
+      reversal = a "accrualReversal" |> decimal }
 
-    if ix.currency = "BASE_SUMMARY"
-      then None
-      else Some ix
+  if ix.currency = "BASE_SUMMARY"
+    then None
+    else Some ix
+
+let createDividendAccrual (node: XElement) =
+  let a = bind_attribute_lookup node
+  let d = {
+    conid = a "conid"
+    symbol = a "symbol"
+    currency = a "currency"
+    quantity = a "quantity" |> decimal
+    gross = a "grossAmount" |> decimal
+    net = a "netAmount" |> decimal
+    tax = a "tax" |> decimal
+    fee = a "fee" |> decimal
+    isPosting = a "code" = "Po"
+    exDate = a "exDate" |> cdate
+    payDate = a "payDate" |> fun ds -> if ds <> "" then Some (cdate ds) else None
+  }
+  if (a "levelOfDetail" = "DETAIL" && d.isPosting)
+    then Some d
+    else None
 
 let parseSymbology (snIn : string) =
   let xml = XDocument.Load (snIn, LoadOptions.SetLineInfo)
@@ -224,6 +269,7 @@ let parseFlexStatement (fnIn : string) =
   let openPositions = xml.Descendants(xn "OpenPosition") |> Seq.map createOpenPosition |> Seq.toList |> List.distinct
   let fxrates = xml.Descendants(xn "ConversionRate") |> Seq.map createFX |> Seq.toList
   let interest = xml.Descendants(xn "InterestAccrualsCurrency") |> Seq.choose createInterest |> Seq.toList
+  let dividends = xml.Descendants(xn "ChangeInDividendAccrual") |> Seq.choose createDividendAccrual |> Seq.toList
 
   {
     orders = orders
@@ -231,12 +277,15 @@ let parseFlexStatement (fnIn : string) =
     positions = openPositions
     fxrates = fxrates
     interest = interest
+    dividends = dividends
   }
 
 let ppBlossom (fnOut: string) (statement : Statement) =
-  // create an extra import line for extras
+  // create an extra import line for extras, etc
   let imports = [
     $"import {Path.GetFileNameWithoutExtension(fnOut)}_extras.fledge"
+    $"import {Path.GetFileNameWithoutExtension(fnOut)}_prices.fledge"
+    $"import {Path.GetFileNameWithoutExtension(fnOut)}_financing.fledge"
     ""
   ]
 
@@ -309,12 +358,49 @@ let ppBlossom (fnOut: string) (statement : Statement) =
     p1 @ p2
   let interest = statement.interest |> List.collect writeInterest
 
+  let writeDividend (dividend: DividendAccrual) =
+    let physicalAccount = $"""Asset:InteractiveBrokers:Trading:STK"""
+    let grossPerUnit = (dividend.gross / dividend.quantity) * if dividend.isPosting then 1.0M else -1.0M
+    let l1 = $"""{dividend.exDate.ToString("yyyy-MM-dd")} dividend {physicalAccount} {dividend.quantity} {dividend.symbol} @ {grossPerUnit} {dividend.currency}"""
+    let l2 = $"""  settlement      Asset:InteractiveBrokers:Cash"""
+    let l3 = $"""  income          Income:Dividends"""
+    let l4 = $"""  receivable      Receivable:Dividends"""
+    let p1 = [l1; l2; l3; l4]
+    let p2 = match dividend.payDate with
+                | Some pd -> p1 @ [$"""  paydate         {pd.ToString("yyyy-MM-dd")}"""]
+                | _ -> p1
+    p2 @ [""]
+
+  let dividends = statement.dividends |> List.collect writeDividend
+
+  let writePriceSeries header (hs : (DateTime * decimal) list) =
+    let hsm = hs |> Map.ofList
+    // reindex to a monday start and 5 day groups on 1 line
+    let firstMonday = hs |> List.minBy fst 
+                         |> fst 
+                         |> function dt -> let g = (int)dt.DayOfWeek - (int)DayOfWeek.Monday
+                                           dt.AddDays(-(float)g)
+    let lastDay = hs |> List.maxBy fst |> fst
+    let schedule = firstMonday |> List.unfold (fun d -> if d <= lastDay then Some (d, d.AddDays(1.0)) else None)
+                               |> List.filter (fun d -> d.DayOfWeek <> DayOfWeek.Saturday && d.DayOfWeek <> DayOfWeek.Sunday)
+    let reindexed = schedule |> List.map (fun dt -> dt, hsm |> Map.tryFind dt)
+    let width = reindexed |> List.map (fun (_, b) -> match b with Some c -> $"{c}" |> String.length | _ -> 3)  // since '...' is length 3
+                          |> List.max
+    let hs2 = reindexed |> List.chunkBySize 5
+                        |> List.map (fun xs -> let left = xs |> List.head |> fst
+                                               let right = xs |> List.map snd
+                                               left, right)
+    let ls = hs2 |> List.map (fun (d, ps) -> let ps2 = ps |> List.map (Option.map (fun o -> $"{o}") >> Option.defaultValue "..." 
+                                                                                                    >> sprintf "%-*s" width)
+                                                          |> String.concat " "
+                                             $"""  {d.ToString("yyyy-MM-dd")} {ps2}""")
+    header :: ls @ [""]
+
   // prices
   let writePrice conid (hs : (DateTime * decimal) list) =
     let security = statement.securities |> Map.find conid
     let l0 = $"""prices {security.symbol} {security.currency}"""
-    let ls = hs |> List.map (fun (d, p) -> $"""  {d.ToString("yyyy-MM-dd")} {p}""")
-    l0 :: ls @ [""]
+    writePriceSeries l0 hs
 
   let prices = statement.positions |> List.groupBy (fun x -> x.conid)
                                    |> List.collect (fun (conid, ps) -> let hs = ps |> List.map (fun p -> p.reportDate, p.price)
@@ -324,15 +410,23 @@ let ppBlossom (fnOut: string) (statement : Statement) =
   // write fx rates
   let writeFx accy dccy (hs : (DateTime * decimal) list) =
     let l0 = $"prices {accy} {dccy}"
-    let ls = hs |> List.map (fun (d, p) -> $"""  {d.ToString("yyyy-MM-dd")} {p}""")
-    l0 :: ls @ [""]
+    writePriceSeries l0 hs
 
   let fxrates = statement.fxrates |> List.groupBy (fun x -> x.accy, x.dccy)
                                   |> List.collect (fun ((accy, dccy), fxs) -> let xs = fxs |> List.map (fun p -> p.reportDate, p.rate)
                                                                                            |> List.distinct
                                                                               writeFx accy dccy xs)
 
-  File.WriteAllLines(fnOut, imports @ securities @ orders @ interest @ prices @ fxrates)
+  // split outputs, as getting... big
+  let stub = Path.Join(Path.GetDirectoryName(fnOut), Path.GetFileNameWithoutExtension(fnOut))
+  let fnPrices = $"{stub}_prices.fledge"
+  let fnFinancing = $"{stub}_financing.fledge"
+
+  File.WriteAllLines(fnOut, imports @ securities @ orders) // temporaryily disable: @ dividends)
+  File.WriteAllLines(fnPrices, prices @ fxrates)
+  File.WriteAllLines(fnFinancing, interest)
+
+
 
 // CLI
 
@@ -348,7 +442,7 @@ type Arguments =
          match s with
            | Mode _      -> "specify the file format for output"
            | Symbology _ -> "symbology filename"
-           | Output _    -> "output filename"
+           | Output _    -> "output filename (stub)"
            | Input _     -> "input filename"
 
 [<EntryPoint>]
