@@ -331,11 +331,7 @@ let ppBlossom (fnOut: string) (statement : Statement) =
                | x when x = 0M -> p2
                | x -> p2 @ [$"  expense         Expense:InteractiveBrokers:Taxes  {order.taxes} {security.currency}"]
 
-    let p4 = match order.opening with
-               | false -> p3 @ ["  cg              Income:CapitalGains"]
-               | true  -> p3
-
-    p4 @ [""]
+    p3 @ [""]
 
   let orders = statement.orders |> List.collect writeOrder
 
@@ -409,7 +405,7 @@ let ppBlossom (fnOut: string) (statement : Statement) =
 
   // write fx rates
   let writeFx accy dccy (hs : (DateTime * decimal) list) =
-    let l0 = $"prices {accy} {dccy}"
+    let l0 = $"prices {accy}.{dccy} {dccy}"
     writePriceSeries l0 hs
 
   let fxrates = statement.fxrates |> List.groupBy (fun x -> x.accy, x.dccy)
