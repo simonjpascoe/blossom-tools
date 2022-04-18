@@ -1,5 +1,5 @@
 STORAGE: NONE
-RESTRICTION: ==net50
+RESTRICTION: ==net60
 NUGET
   remote: https://api.nuget.org/v3/index.json
     Argu (6.1.1)

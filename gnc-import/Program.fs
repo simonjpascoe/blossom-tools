@@ -67,7 +67,7 @@ let parse1 (inputFn: string) =
 
 [<EntryPoint>]
 let main argv =
-
+  printfn "Starting..."
   let f (inputFn: string) =
     Console.WriteLine(inputFn)
     let outputFn = Path.ChangeExtension(inputFn, "fledge")
