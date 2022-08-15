@@ -53,11 +53,11 @@ let merge (m1 : Map<'a, 'b>) (m2 : Map<'a, 'b>) = Map.fold (fun s k v -> Map.add
   fromDate="2021-01-21" toDate="2021-01-21" startingAccrualBalance="-xxxx" interestAccrued="-xxxx"
   accrualReversal="0" fxTranslation="0" endingAccrualBalance="-xxxx" />
 
-  <ChangeInDividendAccrual accountId="Uxxxxxx" acctAlias="" model="" currency="HKD" fxRateToBase="1" assetCategory="STK" 
-  symbol="315" description="SMARTONE TELECOMMUNICATIONS" conid="4116485" securityID="BMG8219Z1059" securityIDType="ISIN" cusip="" 
-  isin="BMG8219Z1059" listingExchange="SEHK" underlyingConid="" underlyingSymbol="" underlyingSecurityID="" 
-  underlyingListingExchange="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor="" 
-  reportDate="2021-03-18" date="2021-03-18" exDate="2021-03-05" payDate="2021-03-18" quantity="15000" tax="0" fee="0" 
+  <ChangeInDividendAccrual accountId="Uxxxxxx" acctAlias="" model="" currency="HKD" fxRateToBase="1" assetCategory="STK"
+  symbol="315" description="SMARTONE TELECOMMUNICATIONS" conid="4116485" securityID="BMG8219Z1059" securityIDType="ISIN" cusip=""
+  isin="BMG8219Z1059" listingExchange="SEHK" underlyingConid="" underlyingSymbol="" underlyingSecurityID=""
+  underlyingListingExchange="" issuer="" multiplier="1" strike="" expiry="" putCall="" principalAdjustFactor=""
+  reportDate="2021-03-18" date="2021-03-18" exDate="2021-03-05" payDate="2021-03-18" quantity="15000" tax="0" fee="0"
   grossRate="0.145" grossAmount="-2175" netAmount="-2175" code="Re" fromAcct="" toAcct="" levelOfDetail="DETAIL" />
 *)
 
@@ -113,7 +113,7 @@ type InterestAccrual =
     reversal: decimal
   }
 
-type DividendAccrual = 
+type DividendAccrual =
   {
     conid: string
     symbol: string
@@ -372,8 +372,8 @@ let ppBlossom (fnOut: string) (statement : Statement) =
   let writePriceSeries header (hs : (DateTime * decimal) list) =
     let hsm = hs |> Map.ofList
     // reindex to a monday start and 5 day groups on 1 line
-    let firstMonday = hs |> List.minBy fst 
-                         |> fst 
+    let firstMonday = hs |> List.minBy fst
+                         |> fst
                          |> function dt -> let g = (int)dt.DayOfWeek - (int)DayOfWeek.Monday
                                            dt.AddDays(-(float)g)
     let lastDay = hs |> List.maxBy fst |> fst
@@ -386,7 +386,7 @@ let ppBlossom (fnOut: string) (statement : Statement) =
                         |> List.map (fun xs -> let left = xs |> List.head |> fst
                                                let right = xs |> List.map snd
                                                left, right)
-    let ls = hs2 |> List.map (fun (d, ps) -> let ps2 = ps |> List.map (Option.map (fun o -> $"{o}") >> Option.defaultValue "..." 
+    let ls = hs2 |> List.map (fun (d, ps) -> let ps2 = ps |> List.map (Option.map (fun o -> $"{o}") >> Option.defaultValue "..."
                                                                                                     >> sprintf "%-*s" width)
                                                           |> String.concat " "
                                              $"""  {d.ToString("yyyy-MM-dd")} {ps2}""")
@@ -408,10 +408,32 @@ let ppBlossom (fnOut: string) (statement : Statement) =
     let l0 = $"prices {accy}.{dccy} {dccy}"
     writePriceSeries l0 hs
 
-  let fxrates = statement.fxrates |> List.groupBy (fun x -> x.accy, x.dccy)
-                                  |> List.collect (fun ((accy, dccy), fxs) -> let xs = fxs |> List.map (fun p -> p.reportDate, p.rate)
-                                                                                           |> List.distinct
-                                                                              writeFx accy dccy xs)
+  let fxrates =
+    let pairs = statement.fxrates |> List.groupBy (fun x -> x.accy, x.dccy)
+                                  |> List.map (fun ((accy, dccy), fxs) -> let xs = fxs |> List.map (fun p -> p.reportDate, p.rate)
+                                                                                       |> List.distinct
+                                                                          (accy, dccy), xs)
+    let s0 = pairs |> List.collect (fun ((a, d), v) -> writeFx a d v)
+    let mpairs = Map.ofList pairs
+
+    let inverses = ["HKD", "JPY"]
+    let s1 = inverses |> List.collect (fun (a, d) -> let p1 = mpairs |> Map.find (d,a)
+                                                     writeFx a d (p1 |> List.map (fun (dt,v) -> (dt, 1.0M/v))))
+    let indirects = ["HKD", "AUD", "JPY"; "HKD", "KRW", "JPY"]
+    let s2 = indirects |> List.collect (fun (a, d1, d2) -> let p1 = mpairs |> Map.find (d1, a)
+                                                           let p2 = mpairs |> Map.find (d2, a)
+                                                           let m1 = p1 |> Map.ofList
+                                                           let m2 = p2 |> Map.ofList
+                                                           let ds = List.map fst p1 @ List.map fst p2 |> List.distinct |> List.sort
+                                                           let vs = ds |> List.choose (fun dt -> let v1 = Map.tryFind dt m1
+                                                                                                 let v2 = Map.tryFind dt m2
+                                                                                                 match v1, v2 with
+                                                                                                   | Some w1, Some w2 -> Some (dt, w1 / w2)
+                                                                                                   | _ -> None)
+
+                                                           writeFx d1 d2 vs)
+
+    s0 @ s1 @ s2
 
   // split outputs, as getting... big
   let stub = Path.Join(Path.GetDirectoryName(fnOut), Path.GetFileNameWithoutExtension(fnOut))
