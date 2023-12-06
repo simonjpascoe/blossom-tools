@@ -444,7 +444,12 @@ let ppBlossom (fnOut: string) (statement : Statement) =
   File.WriteAllLines(fnPrices, prices @ fxrates)
   File.WriteAllLines(fnFinancing, interest)
 
-
+let resolveFiles inputs = 
+  let resolve1 (input: string) = 
+    let directory = Path.GetDirectoryName(input)
+    let pattern = Path.GetFileName(input)
+    Directory.GetFiles(directory, pattern) |> List.ofArray
+  inputs |> List.collect resolve1 
 
 // CLI
 
@@ -473,8 +478,9 @@ let main argv =
   let symbologyIn = results.TryGetResult Symbology
   let inputs = results.GetResults Input
 
-  let parsed = inputs |> List.map parseFlexStatement
-                      |> List.fold mergeStatements Statement.Empty
+  let inputs2 = resolveFiles inputs
+  let parsed = inputs2 |> List.map parseFlexStatement
+                       |> List.fold mergeStatements Statement.Empty
 
   // use symbology here to enrich
   // let symbology = symbologyIn |> parseSymbology

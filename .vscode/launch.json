@@ -11,14 +11,9 @@
       "preLaunchTask": "build_ibkr_import",
       "program": "${workspaceFolder}/ibkr-import/bin/Debug/net6.0/ibkr-import.dll",
       "args": ["--mode", "blossom",
-               "--symbology", "G:\\personal-git-repos-local\\finance\\ibkr\\symbology.xml",
-               "--output", "G:\\personal-git-repos-local\\finance\\ibkr\\omni.fledge",
-               "--input", "G:\\personal-git-repos-local\\finance\\ibkr\\omni_2017.xml",
-               "--input", "G:\\personal-git-repos-local\\finance\\ibkr\\omni_2018.xml",
-               "--input", "G:\\personal-git-repos-local\\finance\\ibkr\\omni_2019.xml",
-               "--input", "G:\\personal-git-repos-local\\finance\\ibkr\\omni_2020.xml",
-               "--input", "G:\\personal-git-repos-local\\finance\\ibkr\\omni_2021.xml",
-               "--input", "G:\\personal-git-repos-local\\finance\\ibkr\\omni_2022.xml",
+               "--symbology", "D:\\personal-git-repos-local\\finance\\ibkr\\symbology.xml",
+               "--output", "D:\\personal-git-repos-local\\finance\\ibkr\\omni.fledge",
+               "--input", "D:\\personal-git-repos-local\\finance\\ibkr\\omni_*.xml",
                ],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
@@ -31,7 +26,7 @@
       "preLaunchTask": "build_gnc_import",
       "program": "${workspaceFolder}/gnc-import/bin/Debug/net6.0/gnc-import.dll",
       "args": [
-               "F:\\My Drive\\Expenses\\20220418_124506_gnucash_export_Book_2.gnca"
+               "F:\\My Drive\\Expenses\\20221029_155130_gnucash_export_Book_2.gnca"
               ],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
