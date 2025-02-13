@@ -9,7 +9,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build_ibkr_import",
-      "program": "${workspaceFolder}/ibkr-import/bin/Debug/net6.0/ibkr-import.dll",
+      "program": "${workspaceFolder}/ibkr-import/bin/Debug/net9.0/ibkr-import.dll",
       "args": ["--mode", "blossom",
                "--symbology", "D:\\personal-git-repos-local\\finance\\ibkr\\symbology.xml",
                "--output", "D:\\personal-git-repos-local\\finance\\ibkr\\omni.fledge",
@@ -24,7 +24,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build_gnc_import",
-      "program": "${workspaceFolder}/gnc-import/bin/Debug/net6.0/gnc-import.dll",
+      "program": "${workspaceFolder}/gnc-import/bin/Debug/net9.0/gnc-import.dll",
       "args": [
                "F:\\My Drive\\Expenses\\20221029_155130_gnucash_export_Book_2.gnca"
               ],
