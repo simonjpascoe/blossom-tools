@@ -15,6 +15,12 @@ let est2hkt dt = TimeZoneInfo.ConvertTime(TimeZoneInfo.ConvertTimeToUtc(dt, EST)
 let cdatetime str = DateTime.ParseExact(str, "yyyy-MM-dd;HH:mm:ss", CultureInfo.CurrentCulture)
 let cdate str = DateTime.ParseExact(str, "yyyy-MM-dd", CultureInfo.CurrentCulture)
 
+let cdate2 (str: String) = 
+  match str.Length with 
+    | 0  -> None
+    | 10 -> cdate str |> Some 
+    | _  -> cdatetime str |> Some
+
 let merge (m1 : Map<'a, 'b>) (m2 : Map<'a, 'b>) = Map.fold (fun s k v -> Map.add k v s) m2 m1
 
 (*
@@ -91,10 +97,14 @@ type Security =
 
 type OpenPosition =
   {
+    levelOfDetail: string
     conid: string
     reportDate: DateTime
     position: decimal
     price: decimal
+    openPrice: decimal
+    originatingOrderId: string
+    openDateTime: DateTime option
   }
 
 type FXRate =
@@ -133,6 +143,7 @@ type Statement =
     orders: Order list
     securities: Map<string, Security>
     positions: OpenPosition list
+    legacy: OpenPosition list
     fxrates: FXRate list
     interest: InterestAccrual list
     dividends: DividendAccrual list
@@ -143,6 +154,7 @@ type Statement =
           orders = []
           securities = Map.empty
           positions = []
+          legacy = []
           fxrates = []
           interest = []
           dividends = []
@@ -153,6 +165,7 @@ let mergeStatements s1 s2 =
     orders = s1.orders @ s2.orders
     securities = merge s1.securities s2.securities
     positions = s1.positions @ s2.positions
+    legacy = s1.legacy @ s2.legacy
     fxrates = s1.fxrates @ s2.fxrates
     interest = s1.interest @ s2.interest
     dividends = s1.dividends @ s2.dividends
@@ -194,10 +207,14 @@ let createSecurity (node: XElement) =
 let createOpenPosition (node: XElement) =
   let a = bind_attribute_lookup node
   {
+    levelOfDetail = a "levelOfDetail"
     conid = a "conid"
     reportDate = a "reportDate" |> cdate
     position = a "position" |> decimal
     price = a "markPrice" |> decimal
+    openPrice = a "openPrice" |> decimal
+    originatingOrderId = a "originatingOrderID"
+    openDateTime = a "openDateTime" |> cdate2
   }
 
 let createFX (node: XElement) =
@@ -246,6 +263,7 @@ let parseSymbology (snIn : string) =
   xml
 
 let parseFlexStatement (fnIn : string) =
+  printfn "%s" fnIn
   let xml = XDocument.Load (fnIn, LoadOptions.SetLineInfo)
 
   let orders = xml.Descendants(xn "Order") |> Seq.map createOrder |> Seq.toList
@@ -266,7 +284,9 @@ let parseFlexStatement (fnIn : string) =
       |> Map.ofSeq
 
   let securities = merge securities1 securities2
-  let openPositions = xml.Descendants(xn "OpenPosition") |> Seq.map createOpenPosition |> Seq.toList |> List.distinct
+  let openPositions0 = xml.Descendants(xn "OpenPosition") |> Seq.map createOpenPosition |> Seq.toList
+  let openPositions_summary, openPositions_lot = openPositions0 |> List.partition (fun x -> x.levelOfDetail = "SUMMARY")
+  let openPositions_legacy = openPositions_lot |> List.filter (fun a -> a.originatingOrderId = "")
   let fxrates = xml.Descendants(xn "ConversionRate") |> Seq.map createFX |> Seq.toList
   let interest = xml.Descendants(xn "InterestAccrualsCurrency") |> Seq.choose createInterest |> Seq.toList
   let dividends = xml.Descendants(xn "ChangeInDividendAccrual") |> Seq.choose createDividendAccrual |> Seq.toList
@@ -274,7 +294,8 @@ let parseFlexStatement (fnIn : string) =
   {
     orders = orders
     securities = securities
-    positions = openPositions
+    positions = openPositions_summary
+    legacy = openPositions_legacy
     fxrates = fxrates
     interest = interest
     dividends = dividends
@@ -283,6 +304,7 @@ let parseFlexStatement (fnIn : string) =
 let ppBlossom (fnOut: string) (statement : Statement) =
   // create an extra import line for extras, etc
   let imports = [
+    $"import {Path.GetFileNameWithoutExtension(fnOut)}_legacy.fledge"
     $"import {Path.GetFileNameWithoutExtension(fnOut)}_extras.fledge"
     $"import {Path.GetFileNameWithoutExtension(fnOut)}_prices.fledge"
     $"import {Path.GetFileNameWithoutExtension(fnOut)}_financing.fledge"
@@ -435,11 +457,28 @@ let ppBlossom (fnOut: string) (statement : Statement) =
 
     s0 @ s1 @ s2
 
+  // write legacy transactions, temporarily. this picks up open positions without an "originatingOrderID"
+  let legacy = 
+    statement.legacy |> List.distinctBy (fun x -> (x.conid, x.position, x.openPrice, x.openDateTime))
+                     |> List.map (fun x -> {conid = x.conid
+                                            quantity = x.position
+                                            price = x.price
+                                            commission = 0.0m
+                                            commissionCurrency = ""
+                                            taxes = 0.0m
+                                            reportDate = Option.get x.openDateTime
+                                            opening = true})
+                     |> List.sortBy _.reportDate
+                     |> List.collect writeOrder
+
+
   // split outputs, as getting... big
   let stub = Path.Join(Path.GetDirectoryName(fnOut), Path.GetFileNameWithoutExtension(fnOut))
+  let fnLegacy = $"{stub}_legacy.fledge"
   let fnPrices = $"{stub}_prices.fledge"
   let fnFinancing = $"{stub}_financing.fledge"
 
+  File.WriteAllLines(fnLegacy, legacy)
   File.WriteAllLines(fnOut, imports @ securities @ orders) // temporaryily disable: @ dividends)
   File.WriteAllLines(fnPrices, prices @ fxrates)
   File.WriteAllLines(fnFinancing, interest)
